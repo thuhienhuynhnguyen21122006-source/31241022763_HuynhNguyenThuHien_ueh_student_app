@@ -1,5 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Quét mã QR điểm danh -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Lấy toạ độ khi đợt điểm danh yêu cầu vị trí -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="ueh_student"
         android:name="${applicationName}"

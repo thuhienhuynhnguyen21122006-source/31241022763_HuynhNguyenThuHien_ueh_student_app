@@ -24,6 +24,10 @@
 		<string>????</string>
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Ứng dụng dùng camera để quét mã QR điểm danh.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Ứng dụng dùng vị trí của bạn để xác nhận bạn có mặt tại địa điểm điểm danh.</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 		<key>UIApplicationSceneManifest</key>
