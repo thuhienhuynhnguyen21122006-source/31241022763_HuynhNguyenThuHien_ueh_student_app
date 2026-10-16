@@ -1,7 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../helpers/student_api.dart';
-import '../helpers/ueh_news_service.dart';
+import '../helpers/news_api.dart';
 import '../widgets/home_screen.dart';
 import '../widgets/login_screen.dart';
 import '../widgets/splash_screen.dart';
@@ -11,9 +11,9 @@ class AppRoutes {
   static const splash = '/';
   static const login = '/login';
   static const home = '/home';
-  // vd: /news?title=Cuộc sống UEH&url=https://ueh.edu.vn/cuoc-song-ueh/
+  // vd: /news?title=Cuộc sống UEH&cat_uid=219
   static const news = '/news';
-  // vd: /news/detail?url=https://ueh.edu.vn/cuoc-song-ueh/tin-tuc/...-78881
+  // vd: /news/detail?uid=101
   static const newsDetail = '/news/detail';
 }
 
@@ -44,13 +44,16 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.news,
       builder: (context, state) => UehNewsScreen(
         title: state.uri.queryParameters['title'] ?? 'Cuộc sống UEH',
-        url: state.uri.queryParameters['url'] ?? UehNewsService.cuocSongUehUrl,
+        catUid:
+            int.tryParse(state.uri.queryParameters['cat_uid'] ?? '') ??
+            NewsApi.cuocSongUehCatUid,
       ),
     ),
     GoRoute(
       path: AppRoutes.newsDetail,
-      builder: (context, state) =>
-          UehNewsDetailScreen(url: state.uri.queryParameters['url'] ?? ''),
+      builder: (context, state) => UehNewsDetailScreen(
+        uid: int.tryParse(state.uri.queryParameters['uid'] ?? '') ?? 0,
+      ),
     ),
   ],
 );

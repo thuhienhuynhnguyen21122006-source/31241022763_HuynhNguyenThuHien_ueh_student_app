@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "430117709058",
+    "project_id": "ueh-student-app-f368f",
+    "storage_bucket": "ueh-student-app-f368f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:430117709058:android:9c844db149bc5e449b4e1b",
+        "android_client_info": {
+          "package_name": "com.example.ueh_student"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZU9t63y-PALh7Q-KVODZKuUGdJSJuoDY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,40 +3,23 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../helpers/ueh_news_service.dart';
+import '../helpers/news_api.dart';
+import '../helpers/student_api.dart';
 
 const uehOrange = Color(0xFFF26F21);
 const _teal = Color(0xFF0B5D66);
 
-/// Link tới một bài viết trên ueh.edu.vn thì mở trong app,
-/// còn lại (YouTube, Facebook...) mở bằng trình duyệt ngoài.
-void _openLink(BuildContext context, String? url) {
+/// Link trong nội dung bài viết mở bằng trình duyệt ngoài (API chỉ tra được
+/// tin theo uid, không theo URL ueh.edu.vn).
+void _openLink(String? url) {
   if (url == null || url.isEmpty) return;
   final uri = Uri.tryParse(url);
   if (uri == null) return;
-  final isUehArticle =
-      uri.host.endsWith('ueh.edu.vn') &&
-      uri.pathSegments.length >= 2 &&
-      RegExp(r'-\d+$').hasMatch(uri.path);
-  if (isUehArticle) {
-    UehNewsDetailScreen.open(context, url);
-  } else {
-    launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-}
-
-/// Web ghi danh mục bằng chữ in hoa ("KHOA HỌC - GÓC NHÌN CHUYÊN GIA");
-/// đổi về dạng tên như trên breadcrumb của web ("Khoa học - Góc nhìn chuyên gia").
-String _categoryTitle(String category) {
-  final lower = category.toLowerCase().replaceAll('ueh', 'UEH');
-  return lower.replaceAllMapped(
-    RegExp(r'(^|[-&]\s*)(\S)'),
-    (m) => '${m[1]}${m[2]!.toUpperCase()}',
-  );
+  launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 // ---------------------------------------------------------------------------
-// Tab "Tin tức" ở Trang chủ — dữ liệu từ https://ueh.edu.vn/tintucmobile
+// Tab "Tin tức" ở Trang chủ — dữ liệu từ GET /api/news/featured
 // ---------------------------------------------------------------------------
 
 class UehNewsTab extends StatefulWidget {
@@ -47,14 +30,14 @@ class UehNewsTab extends StatefulWidget {
 }
 
 class _UehNewsTabState extends State<UehNewsTab> {
-  late Future<NewsHome> _future = UehNewsService.fetchHome();
+  late Future<List<NewsItem>> _future = NewsApi.fetchFeatured();
 
   Future<void> _reload() async {
-    final future = UehNewsService.fetchHome();
+    final future = NewsApi.fetchFeatured();
     setState(() {
       _future = future;
     });
-    await future.catchError((_) => const NewsHome(featured: null, items: []));
+    await future.catchError((_) => const <NewsItem>[]);
   }
 
   @override
@@ -63,10 +46,11 @@ class _UehNewsTabState extends State<UehNewsTab> {
       color: Colors.white,
       child: RefreshIndicator(
         onRefresh: _reload,
-        child: FutureBuilder<NewsHome>(
+        child: FutureBuilder<List<NewsItem>>(
           future: _future,
           builder: (context, snapshot) {
-            final home = snapshot.data;
+            // Phần tử đầu là tin nổi bật, các tin sau là tin mới nhất theo mục.
+            final news = snapshot.data ?? const <NewsItem>[];
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
               children: [
@@ -91,9 +75,8 @@ class _UehNewsTabState extends State<UehNewsTab> {
                 else if (snapshot.hasError)
                   _ErrorBox(error: snapshot.error, onRetry: _reload)
                 else ...[
-                  if (home!.featured != null)
-                    _FeaturedNews(item: home.featured!),
-                  for (final item in home.items) ...[
+                  if (news.isNotEmpty) _FeaturedNews(item: news.first),
+                  for (final item in news.skip(1)) ...[
                     const SizedBox(height: 20),
                     _CategoryNewsCard(item: item),
                   ],
@@ -105,7 +88,7 @@ class _UehNewsTabState extends State<UehNewsTab> {
                         onTap: () => UehNewsScreen.open(
                           context,
                           title: 'Tin tức nổi bật',
-                          url: UehNewsService.cuocSongUehUrl,
+                          catUid: NewsApi.cuocSongUehCatUid,
                         ),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(
@@ -134,7 +117,7 @@ class _UehNewsTabState extends State<UehNewsTab> {
 class _FeaturedNews extends StatelessWidget {
   const _FeaturedNews({required this.item});
 
-  final NewsSummary item;
+  final NewsItem item;
 
   static const _radius = BorderRadius.all(Radius.circular(8));
 
@@ -149,26 +132,31 @@ class _FeaturedNews extends StatelessWidget {
       child: ClipRRect(
         borderRadius: _radius,
         child: InkWell(
-          onTap: () => _openLink(context, item.url),
+          onTap: () => UehNewsDetailScreen.open(context, item.uid),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final imageHeight = constraints.maxWidth * 9 / 16;
+              final fallback = Image.asset(
+                'asset/image/ueh-background.jpg',
+                width: double.infinity,
+                height: imageHeight,
+                fit: BoxFit.cover,
+              );
+              final imageUrl = item.backgroundImg;
 
               return Stack(
                 children: [
                   // Lớp dưới: ảnh 16:9, quyết định kích thước của Stack.
-                  Image.network(
-                    item.imageUrl,
-                    width: double.infinity,
-                    height: imageHeight,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Image.asset(
-                      'asset/image/ueh-background.jpg',
+                  if (imageUrl == null)
+                    fallback
+                  else
+                    Image.network(
+                      imageUrl,
                       width: double.infinity,
                       height: imageHeight,
                       fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => fallback,
                     ),
-                  ),
                   // Lớp trên: gradient trong suốt -> đen ghim ở đáy ảnh; phần
                   // đệm trên 40 cho gradient mờ dần, phủ khoảng nửa dưới ảnh.
                   Positioned(
@@ -240,29 +228,29 @@ class _FeaturedNews extends StatelessWidget {
 class _CategoryNewsCard extends StatelessWidget {
   const _CategoryNewsCard({required this.item});
 
-  final NewsSummary item;
+  final NewsItem item;
 
   @override
   Widget build(BuildContext context) {
     return _CardShell(
-      onTap: () => _openLink(context, item.url),
+      onTap: () => UehNewsDetailScreen.open(context, item.uid),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bấm chữ danh mục -> danh sách bài Cuộc sống UEH, nhưng tiêu đề
-            // là tên danh mục vừa bấm; bấm phần còn lại của thẻ -> mở bài.
+            // Bấm chữ danh mục -> danh sách tin của mục đó; bấm phần còn lại
+            // của thẻ -> mở bài.
             InkWell(
               onTap: () => UehNewsScreen.open(
                 context,
-                title: _categoryTitle(item.category),
-                url: UehNewsService.cuocSongUehUrl,
+                title: item.categoryName,
+                catUid: item.catUid,
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Text(
-                  item.category.toUpperCase(),
+                  item.categoryName.toUpperCase(),
                   style: const TextStyle(
                     color: uehOrange,
                     fontSize: 14,
@@ -290,23 +278,23 @@ class _CategoryNewsCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Danh sách bài viết của một chuyên mục (vd Cuộc sống UEH), lazy load
+// Danh sách tin của một mục (GET /api/news?cat_uid=...), lazy load
 // ---------------------------------------------------------------------------
 
 class UehNewsScreen extends StatefulWidget {
-  const UehNewsScreen({super.key, required this.title, required this.url});
+  const UehNewsScreen({super.key, required this.title, required this.catUid});
 
   final String title;
-  final String url;
+  final int catUid;
 
   static Future<void> open(
     BuildContext context, {
     required String title,
-    required String url,
+    required int catUid,
   }) {
     return Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => UehNewsScreen(title: title, url: url),
+        builder: (_) => UehNewsScreen(title: title, catUid: catUid),
       ),
     );
   }
@@ -317,11 +305,10 @@ class UehNewsScreen extends StatefulWidget {
 
 class _UehNewsScreenState extends State<UehNewsScreen> {
   final _scrollController = ScrollController();
-  final _items = <NewsSummary>[];
+  final _items = <NewsItem>[];
 
-  late String _pageBaseUrl = widget.url;
-  int _nextPage = 1;
-  int? _lastPage;
+  /// Số tin server đã trả, dùng làm offset cho lần tải sau.
+  int _offset = 0;
   bool _isLoading = false;
   bool _hasMore = true;
   Object? _error;
@@ -354,16 +341,17 @@ class _UehNewsScreenState extends State<UehNewsScreen> {
     });
 
     try {
-      final page = await UehNewsService.fetchListPage(_pageBaseUrl, _nextPage);
+      final page = await NewsApi.fetchByCategory(
+        widget.catUid,
+        offset: _offset,
+      );
       if (!mounted || generation != _generation) return;
       setState(() {
-        // Có bài mới đăng thì các bài bị đẩy sang trang sau, bỏ bài trùng.
-        final seen = _items.map((e) => e.url).toSet();
-        _items.addAll(page.items.where((e) => seen.add(e.url)));
-        _lastPage = page.lastPage;
-        if (page.pageBaseUrl.isNotEmpty) _pageBaseUrl = page.pageBaseUrl;
-        _hasMore = page.items.isNotEmpty && _nextPage < page.lastPage;
-        _nextPage++;
+        // Có tin mới đăng thì tin cũ bị đẩy sang trang sau, bỏ tin trùng.
+        final seen = _items.map((e) => e.uid).toSet();
+        _items.addAll(page.items.where((e) => seen.add(e.uid)));
+        _offset += page.items.length;
+        _hasMore = page.items.isNotEmpty && _offset < page.total;
       });
     } catch (e) {
       if (mounted && generation == _generation) setState(() => _error = e);
@@ -378,9 +366,7 @@ class _UehNewsScreenState extends State<UehNewsScreen> {
     setState(() {
       _generation++;
       _items.clear();
-      _pageBaseUrl = widget.url;
-      _nextPage = 1;
-      _lastPage = null;
+      _offset = 0;
       _hasMore = true;
       _isLoading = false;
     });
@@ -428,9 +414,7 @@ class _UehNewsScreenState extends State<UehNewsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 20),
       child: Text(
-        _items.isEmpty
-            ? 'Chưa có bài viết'
-            : 'Đã hết bài viết (${_lastPage ?? 1} trang)',
+        _items.isEmpty ? 'Chưa có bài viết' : 'Đã hết bài viết',
         textAlign: TextAlign.center,
         style: const TextStyle(color: Colors.grey),
       ),
@@ -448,7 +432,7 @@ class _ArticleRow extends StatelessWidget {
     required this.isLast,
   });
 
-  final NewsSummary item;
+  final NewsItem item;
   final bool isFirst;
   final bool isLast;
 
@@ -470,7 +454,7 @@ class _ArticleRow extends StatelessWidget {
       child: Column(
         children: [
           InkWell(
-            onTap: () => UehNewsDetailScreen.open(context, item.url),
+            onTap: () => UehNewsDetailScreen.open(context, item.uid),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
@@ -478,27 +462,24 @@ class _ArticleRow extends StatelessWidget {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(6),
-                    child: Image.network(
-                      item.imageUrl,
-                      width: 90,
-                      height: 90,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        width: 90,
-                        height: 90,
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.image_not_supported_outlined),
-                      ),
-                    ),
+                    child: item.thumbnailImg == null
+                        ? const _NoThumbnail()
+                        : Image.network(
+                            item.thumbnailImg!,
+                            width: 90,
+                            height: 90,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const _NoThumbnail(),
+                          ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (item.date.isNotEmpty) ...[
+                        if (item.postDateText.isNotEmpty) ...[
                           Text(
-                            item.date,
+                            item.postDateText,
                             style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 12,
@@ -506,8 +487,8 @@ class _ArticleRow extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                         ],
-                        if (item.sdgIcons.isNotEmpty) ...[
-                          _SdgIcons(urls: item.sdgIcons, size: 22),
+                        if (item.sdgs.isNotEmpty) ...[
+                          _SdgIcons(sdgs: item.sdgs, size: 22),
                           const SizedBox(height: 6),
                         ],
                         Text(
@@ -536,17 +517,17 @@ class _ArticleRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Chi tiết bài viết, nội dung dựng bằng flutter_html
+// Chi tiết tin (GET /api/news/{uid}), nội dung dựng bằng flutter_html
 // ---------------------------------------------------------------------------
 
 class UehNewsDetailScreen extends StatefulWidget {
-  const UehNewsDetailScreen({super.key, required this.url});
+  const UehNewsDetailScreen({super.key, required this.uid});
 
-  final String url;
+  final int uid;
 
-  static Future<void> open(BuildContext context, String url) {
+  static Future<void> open(BuildContext context, int uid) {
     return Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => UehNewsDetailScreen(url: url)));
+        .push(MaterialPageRoute(builder: (_) => UehNewsDetailScreen(uid: uid)));
   }
 
   @override
@@ -554,10 +535,11 @@ class UehNewsDetailScreen extends StatefulWidget {
 }
 
 class _UehNewsDetailScreenState extends State<UehNewsDetailScreen> {
-  late Future<NewsDetail> _future = UehNewsService.fetchDetail(widget.url);
+  // Chỉ tải nội dung khi mở bài.
+  late Future<NewsItem> _future = NewsApi.fetchDetail(widget.uid);
 
   Future<void> _reload() async {
-    final future = UehNewsService.fetchDetail(widget.url);
+    final future = NewsApi.fetchDetail(widget.uid);
     setState(() {
       _future = future;
     });
@@ -571,7 +553,7 @@ class _UehNewsDetailScreenState extends State<UehNewsDetailScreen> {
       appBar: _newsAppBar(context),
       body: RefreshIndicator(
         onRefresh: _reload,
-        child: FutureBuilder<NewsDetail>(
+        child: FutureBuilder<NewsItem>(
           future: _future,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
@@ -597,30 +579,20 @@ class _UehNewsDetailScreenState extends State<UehNewsDetailScreen> {
                     height: 1.3,
                   ),
                 ),
-                if (d.date.isNotEmpty) ...[
+                if (d.postDateText.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text(d.date, style: const TextStyle(color: Colors.grey)),
-                ],
-                if (d.sdgIcons.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _SdgIcons(urls: d.sdgIcons, size: 36),
-                ],
-                if (d.redirectUrl.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () => launchUrl(
-                      Uri.parse(d.redirectUrl),
-                      mode: LaunchMode.externalApplication,
-                    ),
-                    icon: const Icon(Icons.open_in_new),
-                    label: Text(
-                      'Đọc bài viết đầy đủ tại ${Uri.parse(d.redirectUrl).host}',
-                    ),
+                  Text(
+                    d.postDateText,
+                    style: const TextStyle(color: Colors.grey),
                   ),
+                ],
+                if (d.sdgs.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _SdgIcons(sdgs: d.sdgs, size: 36),
                 ],
                 const SizedBox(height: 12),
                 Html(
-                  data: d.contentHtml,
+                  data: d.content,
                   style: {
                     'body': Style(
                       margin: Margins.zero,
@@ -640,7 +612,11 @@ class _UehNewsDetailScreenState extends State<UehNewsDetailScreen> {
                       builder: (ext) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Image.network(
-                          ext.attributes['src'] ?? '',
+                          // Ảnh trong bài là link ueh.edu.vn; phòng khi gặp
+                          // đường dẫn tương đối.
+                          Uri.parse('https://ueh.edu.vn/')
+                              .resolve(ext.attributes['src'] ?? '')
+                              .toString(),
                           width: double.infinity,
                           fit: BoxFit.fitWidth,
                           errorBuilder: (_, _, _) => const SizedBox.shrink(),
@@ -648,7 +624,7 @@ class _UehNewsDetailScreenState extends State<UehNewsDetailScreen> {
                       ),
                     ),
                   ],
-                  onLinkTap: (url, _, _) => _openLink(context, url),
+                  onLinkTap: (url, _, _) => _openLink(url),
                 ),
               ],
             );
@@ -707,9 +683,10 @@ class _CategoryHeading extends StatelessWidget {
 }
 
 class _SdgIcons extends StatelessWidget {
-  const _SdgIcons({required this.urls, required this.size});
+  const _SdgIcons({required this.sdgs, required this.size});
 
-  final List<String> urls;
+  /// Uid SDG từ 1 đến 17.
+  final List<int> sdgs;
   final double size;
 
   @override
@@ -718,14 +695,29 @@ class _SdgIcons extends StatelessWidget {
       spacing: 4,
       runSpacing: 4,
       children: [
-        for (final url in urls)
+        for (final n in sdgs)
           Image.network(
-            url,
+            NewsApi.sdgIconUrl(n),
             width: size,
             height: size,
             errorBuilder: (_, _, _) => SizedBox(width: size, height: size),
           ),
       ],
+    );
+  }
+}
+
+/// Ảnh thay thế khi tin không có thumbnail_img.
+class _NoThumbnail extends StatelessWidget {
+  const _NoThumbnail();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 90,
+      height: 90,
+      color: Colors.grey.shade200,
+      child: const Icon(Icons.image_not_supported_outlined),
     );
   }
 }
@@ -784,7 +776,7 @@ class _ErrorBox extends StatelessWidget {
           const Icon(Icons.wifi_off, color: Colors.grey, size: 40),
           const SizedBox(height: 8),
           Text(
-            'Không tải được dữ liệu.\n$error',
+            'Không tải được dữ liệu.\n${apiErrorMessage(error ?? '')}',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.grey),
           ),
